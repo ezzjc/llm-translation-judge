@@ -39,3 +39,4 @@ sys_trans = "A fast brown fox leaps above the lazy human."
 
 score = get_phase1_score(ref, sys_trans)
 print(f"Phase I Score: {score}")
+
