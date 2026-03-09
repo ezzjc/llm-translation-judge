@@ -12,6 +12,8 @@ Run:
 """
 
 from openai import OpenAI
+from pydantic import BaseModel, Field
+from enum import Enum
 import json
 import os
 import textwrap
@@ -33,26 +35,19 @@ SIMPLE_CATEGORIES = {
     "locale":      {"weight": 0.10},
 }
 
-SIMPLE_SCHEMA = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "simple_mqm",
-        "strict": True,
-        "schema": {
-            "type": "object",
-            "properties": {
-                "accuracy":    {"type": "object", "properties": {"score": {"type": "number"}, "explanation": {"type": "string"}}, "required": ["score", "explanation"], "additionalProperties": False},
-                "fluency":     {"type": "object", "properties": {"score": {"type": "number"}, "explanation": {"type": "string"}}, "required": ["score", "explanation"], "additionalProperties": False},
-                "terminology": {"type": "object", "properties": {"score": {"type": "number"}, "explanation": {"type": "string"}}, "required": ["score", "explanation"], "additionalProperties": False},
-                "style":       {"type": "object", "properties": {"score": {"type": "number"}, "explanation": {"type": "string"}}, "required": ["score", "explanation"], "additionalProperties": False},
-                "locale":      {"type": "object", "properties": {"score": {"type": "number"}, "explanation": {"type": "string"}}, "required": ["score", "explanation"], "additionalProperties": False},
-                "overall_comment": {"type": "string"},
-            },
-            "required": ["accuracy", "fluency", "terminology", "style", "locale", "overall_comment"],
-            "additionalProperties": False,
-        },
-    },
-}
+
+class CategoryScore(BaseModel):
+    score: float = Field(description="Error severity from 0 (no errors) to 10 (critical errors)")
+    explanation: str = Field(description="Brief explanation justifying the score")
+
+
+class SimpleMQMEvaluation(BaseModel):
+    accuracy: CategoryScore = Field(description="Faithfulness to the meaning of the reference — covers additions, omissions, mistranslations")
+    fluency: CategoryScore = Field(description="Grammatical correctness and naturalness in the target language")
+    terminology: CategoryScore = Field(description="Correct and consistent use of domain-specific terms")
+    style: CategoryScore = Field(description="Appropriateness of register, tone, and stylistic choices")
+    locale: CategoryScore = Field(description="Correct handling of locale conventions such as dates, units, currency")
+    overall_comment: str = Field(description="1-2 sentence summary of the overall translation quality")
 
 
 def evaluate_simple(reference: str, system_output: str) -> dict:
@@ -66,20 +61,21 @@ System:    "{system_output}"
 Categories: accuracy, fluency, terminology, style, locale.
 Provide a score and brief explanation per category, plus an overall_comment."""
 
-    resp = client.chat.completions.create(
+    resp = client.beta.chat.completions.parse(
         model=MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.0,
-        response_format=SIMPLE_SCHEMA,
+        response_format=SimpleMQMEvaluation,
     )
-    evaluation = json.loads(resp.choices[0].message.content)
+    evaluation = resp.choices[0].message.parsed
+    eval_dict = evaluation.model_dump()
 
     penalty = sum(
-        SIMPLE_CATEGORIES[cat]["weight"] * (evaluation[cat]["score"] / 10.0)
+        SIMPLE_CATEGORIES[cat]["weight"] * (eval_dict[cat]["score"] / 10.0)
         for cat in SIMPLE_CATEGORIES
     )
     score = round(max(0.0, 1.0 - penalty), 4)
-    return {"mqm_score": score, "detail": evaluation}
+    return {"mqm_score": score, "detail": eval_dict}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -99,37 +95,24 @@ MQM_WEIGHTS = {
     ("Neutral", "_default"):               0,
 }
 
-PAPER_SCHEMA = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "paper_mqm",
-        "strict": True,
-        "schema": {
-            "type": "object",
-            "properties": {
-                "errors": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "error_span":  {"type": "string"},
-                            "category":    {"type": "string"},
-                            "subcategory": {"type": "string"},
-                            "severity":    {"type": "string"},
-                            "explanation": {"type": "string"},
-                        },
-                        "required": ["error_span", "category", "subcategory", "severity", "explanation"],
-                        "additionalProperties": False,
-                    },
-                },
-                "overall_comment": {"type": "string"},
-            },
-            "required": ["errors", "overall_comment"],
-            "additionalProperties": False,
-        },
-    },
-}
-#Severity is a category, do it with baseModel and pydantic. Desctiptions of everything should be enforced for each filed in the pydantic base class. 
+
+class Severity(str, Enum):
+    MAJOR = "Major"
+    MINOR = "Minor"
+    NEUTRAL = "Neutral"
+
+
+class MQMError(BaseModel):
+    error_span: str = Field(description="The exact text in the System Translation that is wrong")
+    category: str = Field(description="MQM error category: Accuracy, Fluency, Terminology, Style, Locale convention, Non-translation, or Source error")
+    subcategory: str = Field(description="Specific sub-category, e.g. Mistranslation, Omission, Grammar, Punctuation, Awkward, etc.")
+    severity: Severity = Field(description="Error severity: Major (affects meaning/safety), Minor (noticeable but understandable), or Neutral (stylistic preference)")
+    explanation: str = Field(description="Why this is an error and how it affects the translation")
+
+
+class PaperMQMEvaluation(BaseModel):
+    errors: list[MQMError] = Field(description="List of individual translation errors found in the system output")
+    overall_comment: str = Field(description="Summary of the overall translation quality and error patterns")
 
 
 VALID_CATEGORIES = """Accuracy (Mistranslation | Omission | Addition | Untranslated text)
@@ -184,15 +167,14 @@ Segment to evaluate:
 Reference segment: "{reference}"
 System segment:    "{system_output}" """
 
-    resp = client.chat.completions.create(
+    resp = client.beta.chat.completions.parse(
         model=MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.0,
-        response_format=PAPER_SCHEMA,
+        response_format=PaperMQMEvaluation,
     )
-    result = json.loads(resp.choices[0].message.content)
-    # For now, we only highlight errors and do not compute a numeric MQM score.
-    return result
+    result = resp.choices[0].message.parsed
+    return result.model_dump()
 
 
 # ═══════════════════════════════════════════════════════════════
