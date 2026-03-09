@@ -2,6 +2,11 @@ from openai import OpenAI
 import json
 import os
 
+#Implement the MQM Evaluation framework based on this paper https://arxiv.org/pdf/2104.14478 and also make sure that openai stricly uses Json only 
+#gets the data in a structured format through the call function, you can force.
+#Find the categorical error in each translation and count the number of errors no need for scores at this moment in time.
+
+
 # ============================================================
 # SECTION 1: AUTHENTICATION
 # ============================================================
