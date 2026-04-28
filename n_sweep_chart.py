@@ -33,7 +33,7 @@ import numpy as np
 import pandas as pd
 
 from graphs import PALETTE, PLOT_DPI, compute_inter_human_tau
-from mqm_paper_core import load_wmt_mqm_dataset, sample_common_segments
+from mqm_paper_core import load_wmt_mqm_dataset, sample_common_segments, sanitize_slug
 
 # Match graphs.py poster defaults so the new charts share the same look.
 plt.rcParams.update({
@@ -264,10 +264,13 @@ def main() -> None:
 
     subtitle = f"{args.provider}  ·  seed={args.seed}  ·  ceiling on N={ceiling_n}"
 
-    # 4. Render the two charts.
+    # 4. Render the two charts. Output names include the provider slug so
+    #    multiple models can co-exist in the same charts directory without
+    #    clobbering each other.
+    provider_slug = sanitize_slug(args.provider)
     print("\nRendering charts:")
     render_bar_chart(
-        output_dir / "n_sweep_system_tau.png",
+        output_dir / f"n_sweep_system_tau_{provider_slug}.png",
         title="System-Level Kendall τ vs Sample Size",
         subtitle=subtitle,
         bar_labels=bar_labels,
@@ -276,7 +279,7 @@ def main() -> None:
         y_label="System-level Kendall τ (higher = closer to humans)",
     )
     render_bar_chart(
-        output_dir / "n_sweep_segment_tau.png",
+        output_dir / f"n_sweep_segment_tau_{provider_slug}.png",
         title="Segment-Level Kendall τ vs Sample Size",
         subtitle=subtitle,
         bar_labels=bar_labels,
@@ -290,7 +293,7 @@ def main() -> None:
                  "system_kendall_tau": sys_values[i],
                  "segment_kendall_tau": seg_values[i]}
                 for i in range(len(bar_labels))]
-    csv_path = output_dir / "n_sweep_tau_values.csv"
+    csv_path = output_dir / f"n_sweep_tau_values_{provider_slug}.csv"
     pd.DataFrame(csv_rows).to_csv(csv_path, index=False)
     print(f"  wrote {csv_path}")
 
