@@ -9,6 +9,9 @@ Uses large language models as automated judges for translation quality evaluatio
 | `phase1_tester.py` | Phase 1 — simple 0-1 holistic score using Google Gemini |
 | `Phase2_tester.py` | Phase 2 — MQM-based evaluation with per-category error scores (accuracy, fluency, terminology, style, locale) using OpenAI |
 | `mqm_comparison_demo.py` | Compares two MQM approaches: **(A)** simplified holistic per-category scores vs **(B)** paper-faithful individual error annotations with spans, categories, and severities |
+| `mqm_paper_core.py` | Shared paper-faithful MQM logic: dataset parsing, scoring, sampling, analysis, and SVG chart generation |
+| `wmt20_mqm_llm_benchmark.py` | End-to-end benchmark runner for comparing OpenAI / Gemini style providers against human MQM annotations on WMT data |
+| `MQM.md` | Concise Markdown notes extracted from the MQM paper for easier reading and coding |
 | `MQM.pdf` | Reference paper for the MQM evaluation framework |
 
 ## Setup
@@ -47,6 +50,13 @@ python Phase2_tester.py
 
 # MQM comparison demo — simplified vs paper-faithful (OpenAI)
 python mqm_comparison_demo.py
+
+# Paper-faithful benchmark on WMT20 En-De with one or more providers
+python wmt20_mqm_llm_benchmark.py \
+  --provider openai:gpt-4o-mini \
+  --provider gemini:gemini-2.0-flash \
+  --sample-size 20 \
+  --output-dir results/wmt20_en_de_benchmark
 ```
 
 ## MQM Evaluation Approaches
@@ -61,6 +71,17 @@ The LLM identifies individual translation errors, each annotated with:
 - **severity** — Major, Minor, or Neutral
 
 This follows the methodology from the paper and produces fine-grained, diagnosable output suitable for comparing translation systems.
+
+### Paper-Faithful Benchmark (`wmt20_mqm_llm_benchmark.py`)
+This benchmark uses the released Google MQM TSVs as human gold data and evaluates one **system-output segment at a time** with document context, which is much closer to the paper than pooling rows by bare `seg_id`.
+
+Outputs include:
+- a sampled manifest of the exact system/document/segment units evaluated
+- cached raw LLM annotations per provider
+- per-segment comparison CSVs
+- provider summary tables
+- SVG graphs for category counts, severity counts, and provider agreement
+- a Markdown report summarizing the run
 
 ## Evaluating from a JSON file
 

@@ -1,3 +1,7 @@
 openai
 pydantic
 google-generativeai
+anthropic
+pandas
+matplotlib
+scipy
